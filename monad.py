@@ -1,7 +1,20 @@
 from functools import wraps
-from typing import Any, Callable, Generic, ParamSpec, Protocol, Type, TypeVar, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Generic,
+    ParamSpec,
+    Protocol,
+    Type,
+    TypeVar,
+    cast,
+)
 
-from pydantic import BaseModel
+if TYPE_CHECKING:
+    from dataclasses import dataclass
+else:
+    from pydantic.dataclasses import dataclass
 
 T = TypeVar("T")
 T1 = TypeVar("T1")
@@ -44,7 +57,8 @@ class Nothing(Exception):
     pass
 
 
-class Just(Generic[T], BaseModel):
+@dataclass
+class Just(Generic[T]):
     v: T
 
 
@@ -77,7 +91,7 @@ def Maybe(typ: Type[T1]) -> Type[MaybeType[T1]]:
             match self.value:
                 case Nothing():
                     return _Maybe[R](None)
-                case Just(v=v):
+                case Just(v):
                     return _Maybe[R](f(v))
 
         def __call__(self, d: T | None = None) -> T:
@@ -86,7 +100,7 @@ def Maybe(typ: Type[T1]) -> Type[MaybeType[T1]]:
                     if d is None:
                         raise self.value
                     return d
-                case Just(v=v):
+                case Just(v):
                     return v
 
         def ok(self) -> bool:
@@ -115,11 +129,13 @@ def Maybe(typ: Type[T1]) -> Type[MaybeType[T1]]:
     return _Maybe[typ]
 
 
-class Ok(BaseModel, Generic[T]):
+@dataclass
+class Ok(Generic[T]):
     v: T
 
 
-class Er(BaseModel, Generic[E]):
+@dataclass
+class Er(Generic[E]):
     e: E
 
 
@@ -147,16 +163,16 @@ def Result(ok: Type[T1], er: Type[E1]) -> Type[ResultType[T1, E1]]:
 
         def apply(self, f: Callable[[T], R]) -> "_Result[R, E]":
             match self.value:
-                case Ok(v=v):
+                case Ok(v):
                     return _Result[R, E](f(v))
-                case Er(e=e):
+                case Er(e):
                     return _Result[R, E](e)
 
         def __call__(self, d: T | None = None) -> T:
             match self.value:
-                case Ok(v=v):
+                case Ok(v):
                     return v
-                case Er(e=e):
+                case Er(e):
                     if d is None:
                         raise e
                     return d
