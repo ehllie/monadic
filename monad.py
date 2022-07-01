@@ -1,23 +1,10 @@
+from dataclasses import dataclass
 from functools import wraps
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    Generic,
-    ParamSpec,
-    Protocol,
-    Type,
-    TypeVar,
-    cast,
-)
-
-if TYPE_CHECKING:
-    from dataclasses import dataclass
-else:
-    from pydantic.dataclasses import dataclass
+from typing import Any, Callable, Generic, ParamSpec, Protocol, Type, TypeVar, cast
 
 T = TypeVar("T")
 T1 = TypeVar("T1")
+T2 = TypeVar("T2")
 P = ParamSpec("P")
 R = TypeVar("R")
 E = TypeVar("E", bound=Exception)
@@ -29,13 +16,13 @@ class Monad(Protocol[T]):
     def __init__(self, value: T):
         ...
 
-    def apply(self, f: Callable[[T], R]) -> "Monad[R]":
+    def apply(self, f: Callable[[T], R], /) -> "Monad[R]":
         ...
 
 
 class Unwrappable(Protocol[T]):
     @classmethod
-    def binds(cls: Type[U], f: Callable[P, T]) -> Callable[P, U]:
+    def binds(cls: Type[U], f: Callable[P, T], /) -> Callable[P, U]:
         """Converts a funtion of type (*args, **kwargs) -> T, into a (*args, **kwargs) -> Unwrappable[T]"""
         ...
 
@@ -45,7 +32,7 @@ class Unwrappable(Protocol[T]):
     # ) -> Callable[P, U]:
     #     ...
 
-    def __call__(self, d: T | None = None) -> T:
+    def __call__(self, d: T | None = None, /) -> T:
         """Unwraps the value inside. Can throw an exception if no default value is provided"""
         ...
 
@@ -53,23 +40,12 @@ class Unwrappable(Protocol[T]):
         ...
 
 
-class Nothing(Exception):
-    pass
-
-
-@dataclass
-class Just(Generic[T]):
-    v: T
-
-
-class MaybeType(Monad[T], Unwrappable[T], Protocol[T]):
-    value: Just[T] | Nothing
-
+class MaybeMeta(Monad[T], Unwrappable[T], Protocol[T]):
     def __init__(self, value: T | None):
         ...
 
     @classmethod
-    def binds(cls, f: Callable[P, T | None]) -> Callable[P, "MaybeType[T]"]:
+    def binds(cls, f: Callable[P, T | None], /) -> Callable[P, "MaybeMeta[T]"]:
         ...
 
     # @classmethod
@@ -79,32 +55,80 @@ class MaybeType(Monad[T], Unwrappable[T], Protocol[T]):
     #     ...
 
 
+class Nothing(MaybeMeta[None], Protocol):
+    def __init__(self):
+        ...
+
+    def __call__(self, d: T | None = None, /) -> T:  # type: ignore
+        ...
+
+
+@dataclass
+class Just(MaybeMeta[T], Protocol[T]):
+    def __init__(self, value: T):
+        ...
+
+    value: T
+
+J = TypeVar("J", bound="Just[Any]")
+
+class MaybeType(MaybeMeta[T], Protocol[T]):
+    def __new__(cls, value: T | None) -> Just[T] | Nothing:
+        ...
+
+    def __call__(self, d: T | None = None, /) -> Just[T] | Nothing:
+        ...
+
+
 def Maybe(typ: Type[T1]) -> Type[MaybeType[T1]]:
-    class _Maybe(MaybeType[T]):
-        def __init__(self, value: T | None):
-            if isinstance(value, typ):
-                self.value = Just[T](v=cast(T, value))
-            else:
-                self.value = Nothing()
+    class _Just(Just[T]):
+        def __init__(self, value: T):
+            self.value = value
 
-        def apply(self, f: Callable[[T], R]) -> "_Maybe[R]":
-            match self.value:
-                case Nothing():
-                    return _Maybe[R](None)
-                case Just(v):
-                    return _Maybe[R](f(v))
+        def apply(self, f: Callable[[T], R], /) -> "_Just[R]":
+            return _Just(f(self.value))
 
-        def __call__(self, d: T | None = None) -> T:
-            match self.value:
-                case Nothing():
-                    if d is None:
-                        raise self.value
-                    return d
-                case Just(v):
-                    return v
+        def __call__(self, _: T | None = None) -> T:
+            return self.value
 
         def ok(self) -> bool:
-            return self.value is not None
+            return True
+
+        @classmethod
+        def binds(cls, _) -> Any:
+            ...
+
+    class _Nothing(Nothing, Exception):
+        def __init__(self):
+            pass
+
+        def apply(self, _: Callable[..., Any]) -> "MaybeMeta[Any]":
+            return self
+
+        def __call__(self, d: T | None = None) -> T:
+            if d is None:
+                raise self
+            return d
+
+        def ok(self) -> bool:
+            return False
+
+        @classmethod
+        def binds(cls, _) -> Any:
+            ...
+
+    class _Maybe(MaybeType[T]):
+        def __new__(cls, value: T | None) -> _Just[T] | _Nothing:
+            return _Just(value) if value is not None else _Nothing()
+
+        def apply(self, _: Callable[[T], R], /) -> "_Maybe[R]":
+            ...
+
+        def __call__(self, _: T | None = None) -> T:
+            ...
+
+        def ok(self) -> bool:
+            ...
 
         @classmethod
         def binds(cls, f: Callable[P, T | None]) -> Callable[P, "_Maybe[T]"]:
@@ -112,7 +136,7 @@ def Maybe(typ: Type[T1]) -> Type[MaybeType[T1]]:
             def inner(*args: P.args, **kwargs: P.kwargs) -> "_Maybe[T]":
                 try:
                     return _Maybe[T](f(*args, **kwargs))
-                except Nothing:
+                except _Nothing:
                     return _Maybe[T](None)
 
             return inner
