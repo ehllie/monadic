@@ -1,5 +1,7 @@
 from functools import wraps
-from typing import Any, Callable, ParamSpec, Protocol, Type, TypeVar, cast
+from typing import Any, Callable, Generic, ParamSpec, Protocol, Type, TypeVar, cast
+
+from pydantic import BaseModel
 
 T = TypeVar("T")
 T1 = TypeVar("T1")
@@ -21,6 +23,7 @@ class Monad(Protocol[T]):
 class Unwrappable(Protocol[T]):
     @classmethod
     def binds(cls: Type[U], f: Callable[P, T]) -> Callable[P, U]:
+        """Converts a funtion of type (*args, **kwargs) -> T, into a (*args, **kwargs) -> Unwrappable[T]"""
         ...
 
     # @classmethod
@@ -29,14 +32,25 @@ class Unwrappable(Protocol[T]):
     # ) -> Callable[P, U]:
     #     ...
 
-    def __call__(self) -> T:
+    def __call__(self, d: T | None = None) -> T:
+        """Unwraps the value inside. Can throw an exception if no default value is provided"""
         ...
 
     def ok(self) -> bool:
         ...
 
 
+class Nothing(Exception):
+    pass
+
+
+class Just(Generic[T], BaseModel):
+    v: T
+
+
 class MaybeType(Monad[T], Unwrappable[T], Protocol[T]):
+    value: Just[T] | Nothing
+
     def __init__(self, value: T | None):
         ...
 
@@ -51,26 +65,29 @@ class MaybeType(Monad[T], Unwrappable[T], Protocol[T]):
     #     ...
 
 
-class Nothing(Exception):
-    pass
-
-
 def Maybe(typ: Type[T1]) -> Type[MaybeType[T1]]:
     class _Maybe(MaybeType[T]):
         def __init__(self, value: T | None):
-            self.value = value
+            if isinstance(value, typ):
+                self.value = Just[T](v=cast(T, value))
+            else:
+                self.value = Nothing()
 
         def apply(self, f: Callable[[T], R]) -> "_Maybe[R]":
-            if self.value is None:
-                return _Maybe[R](None)
-            else:
-                return _Maybe[R](f(self.value))
+            match self.value:
+                case Nothing():
+                    return _Maybe[R](None)
+                case Just(v=v):
+                    return _Maybe[R](f(v))
 
-        def __call__(self) -> T:
-            if self.value is None:
-                raise Nothing()
-            else:
-                return self.value
+        def __call__(self, d: T | None = None) -> T:
+            match self.value:
+                case Nothing():
+                    if d is None:
+                        raise self.value
+                    return d
+                case Just(v=v):
+                    return v
 
         def ok(self) -> bool:
             return self.value is not None
@@ -98,7 +115,17 @@ def Maybe(typ: Type[T1]) -> Type[MaybeType[T1]]:
     return _Maybe[typ]
 
 
+class Ok(BaseModel, Generic[T]):
+    v: T
+
+
+class Er(BaseModel, Generic[E]):
+    e: E
+
+
 class ResultType(Monad[T], Unwrappable[T], Protocol[T, E]):
+    value: Ok[T] | Er[E]
+
     def __init__(self, value: T | E):
         ...
 
@@ -113,19 +140,26 @@ class ResultType(Monad[T], Unwrappable[T], Protocol[T, E]):
 def Result(ok: Type[T1], er: Type[E1]) -> Type[ResultType[T1, E1]]:
     class _Result(ResultType[T, E]):
         def __init__(self, value: T | E):
-            self.value = value
+            if isinstance(value, ok):
+                self.value = Ok[T](v=cast(T, value))
+            else:
+                self.value = Er[E](e=cast(E, value))
 
         def apply(self, f: Callable[[T], R]) -> "_Result[R, E]":
-            if isinstance(self.value, ok):
-                ret = f(cast(T, self.value))
-                return _Result[R, E](ret)
-            else:
-                return _Result[R, E](cast(E, self.value))
+            match self.value:
+                case Ok(v=v):
+                    return _Result[R, E](f(v))
+                case Er(e=e):
+                    return _Result[R, E](e)
 
-        def __call__(self) -> T:
-            if isinstance(self.value, ok):
-                return cast(T, self.value)
-            raise cast(E, self.value)
+        def __call__(self, d: T | None = None) -> T:
+            match self.value:
+                case Ok(v=v):
+                    return v
+                case Er(e=e):
+                    if d is None:
+                        raise e
+                    return d
 
         def ok(self) -> bool:
             return isinstance(self.value, ok)
