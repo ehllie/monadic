@@ -1,20 +1,6 @@
+from dataclasses import dataclass
 from functools import wraps
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    Generic,
-    ParamSpec,
-    Protocol,
-    Type,
-    TypeVar,
-    cast,
-)
-
-if TYPE_CHECKING:
-    from dataclasses import dataclass
-else:
-    from pydantic.dataclasses import dataclass
+from typing import Any, Callable, Generic, ParamSpec, Protocol, Type, TypeVar, cast
 
 T = TypeVar("T")
 T1 = TypeVar("T1")
@@ -39,17 +25,12 @@ class Unwrappable(Protocol[T]):
         """Converts a funtion of type (*args, **kwargs) -> T, into a (*args, **kwargs) -> Unwrappable[T]"""
         ...
 
-    # @classmethod
-    # def narrow(
-    #     cls: Type[U], f: Callable[Concatenate[Any, P], Any]
-    # ) -> Callable[P, U]:
-    #     ...
-
     def __call__(self, d: T | None = None) -> T:
         """Unwraps the value inside. Can throw an exception if no default value is provided"""
         ...
 
     def ok(self) -> bool:
+        """Returns True if it's safe to unwrap"""
         ...
 
 
@@ -71,12 +52,6 @@ class MaybeType(Monad[T], Unwrappable[T], Protocol[T]):
     @classmethod
     def binds(cls, f: Callable[P, T | None]) -> Callable[P, "MaybeType[T]"]:
         ...
-
-    # @classmethod
-    # def narrow(
-    #     cls, f: Callable[Concatenate[Type[R], P], "MaybeType[R]"]
-    #     ) -> Callable[P, "MaybeType[T]"]:
-    #     ...
 
 
 def Maybe(typ: Type[T1]) -> Type[MaybeType[T1]]:
@@ -116,15 +91,6 @@ def Maybe(typ: Type[T1]) -> Type[MaybeType[T1]]:
                     return _Maybe[T](None)
 
             return inner
-
-        # @classmethod
-        # def narrow(
-        #     cls, f: Callable[Concatenate[Type[R], P], "_Maybe[R]"]
-        # ) -> Callable[P, "_Maybe[T]"]:
-        #     @wraps(f)
-        #     def inner(*args: P.args, **kwargs: P.kwargs) -> "_Maybe[T]":
-        #         return f(cls, *args, **kwargs)
-        #     return inner
 
     return _Maybe[typ]
 
