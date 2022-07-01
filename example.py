@@ -1,4 +1,5 @@
-from monad import Er, Ok, Result
+from methods import fold
+from monad import Callable, Er, Ok, Result, ResultType
 
 StrDict = Result(str, KeyError)
 
@@ -20,6 +21,27 @@ def main():
     ]
     for s in strings:
         match s.value:
+            case Ok(v):
+                print(v)
+            case Er(e):
+                print("No such key:", e)
+
+    get_key: Callable[
+        [dict[str, str], str], ResultType[dict[str, str], KeyError]
+    ] = Result(dict, KeyError).binds(lambda d, k: {**d, k: my_dict[k]})
+
+    collect: Callable[
+        [list[str]], ResultType[dict[str, str], KeyError]
+        ] = lambda keys: fold(get_key, Result(dict, KeyError)({}), keys) # type: ignore
+
+    collected = [
+            collect(["city", "color"]),
+            collect(["language", "city"]),
+            collect(["color", "language", "city", "food"]),
+            collect(["name", "food"]),
+            ]
+    for c in collected:
+        match c.value:
             case Ok(v):
                 print(v)
             case Er(e):

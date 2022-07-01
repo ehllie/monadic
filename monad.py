@@ -2,20 +2,26 @@ from dataclasses import dataclass
 from functools import wraps
 from typing import Any, Callable, Generic, ParamSpec, Protocol, Type, TypeVar, cast
 
-T = TypeVar("T")
-T1 = TypeVar("T1")
 P = ParamSpec("P")
 R = TypeVar("R")
+T = TypeVar("T")
+T1 = TypeVar("T1")
 E = TypeVar("E", bound=Exception)
 E1 = TypeVar("E1", bound=Exception)
+M = TypeVar("M", bound="Monad[Any]")
 U = TypeVar("U", bound="Unwrappable[Any]")
+RM = TypeVar("RM", bound="ResultType[Any, Any]")
 
 
 class Monad(Protocol[T]):
     def __init__(self, value: T):
         ...
 
-    def apply(self, f: Callable[[T], R]) -> "Monad[R]":
+    # Can't define it as (M, Callable[[T], M]) -> M
+    # Type checker claims that for the subclass of type S,
+    # (S, Callable[[T], S]) -> S) is incomatible with the superclass
+    # See https://github.com/python/mypy/issues/1317
+    def apply(self: M, f: Callable[[T], Any]) -> M:
         ...
 
 
@@ -58,16 +64,16 @@ def Maybe(typ: Type[T1]) -> Type[MaybeType[T1]]:
     class _Maybe(MaybeType[T]):
         def __init__(self, value: T | None):
             if isinstance(value, typ):
-                self.value = Just[T](v=cast(T, value))
+                self.value = Just[T](cast(T, value))
             else:
                 self.value = Nothing()
 
-        def apply(self, f: Callable[[T], R]) -> "_Maybe[R]":
+        def apply(self, f: Callable[[T], "_Maybe[R]"]) -> "_Maybe[R]":
             match self.value:
                 case Nothing():
                     return _Maybe[R](None)
                 case Just(v):
-                    return _Maybe[R](f(v))
+                    return f(v)
 
         def __call__(self, d: T | None = None) -> T:
             match self.value:
@@ -111,7 +117,7 @@ class ResultType(Monad[T], Unwrappable[T], Protocol[T, E]):
     def __init__(self, value: T | E):
         ...
 
-    def apply(self, f: Callable[[T], R]) -> "ResultType[R, E]":
+    def apply(self: RM, f: Callable[[T], Any]) -> RM:
         ...
 
     @classmethod
@@ -123,14 +129,14 @@ def Result(ok: Type[T1], er: Type[E1]) -> Type[ResultType[T1, E1]]:
     class _Result(ResultType[T, E]):
         def __init__(self, value: T | E):
             if isinstance(value, ok):
-                self.value = Ok[T](v=cast(T, value))
+                self.value = Ok[T](cast(T, value))
             else:
-                self.value = Er[E](e=cast(E, value))
+                self.value = Er[E](cast(E, value))
 
-        def apply(self, f: Callable[[T], R]) -> "_Result[R, E]":
+        def apply(self, f: Callable[[T], "_Result[R, E]"]) -> "_Result[R, E]":
             match self.value:
                 case Ok(v):
-                    return _Result[R, E](f(v))
+                    return f(v)
                 case Er(e):
                     return _Result[R, E](e)
 
