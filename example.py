@@ -1,24 +1,25 @@
-from methods import fold
-from monad import Callable, Er, Ok, Result, ResultType
+from typing import Iterable, Type
+
+from result import Er, Ok, Result, ResultType
 
 StrDict = Result(str, KeyError)
 
 
 @StrDict.binds
-def format_with(format: str, d: dict[str, str], keys: list[str]) -> str:
-    vals = [d[k] for k in keys]
+def format_with(format: str, d: dict[str, str], keys: Iterable[str]) -> str:
+    vals = (d[k] for k in keys)
     return format.format(*vals)
 
 
 def main():
-    f_string = "I like, {0} and {1}!"
+    f_string = "I like, {} and {}!"
     my_dict = {"color": "purple", "language": "Haskell", "city": "Warsaw"}
-    strings = [
-        format_with(f_string, my_dict, ["city", "color"]),
-        format_with(f_string, my_dict, ["language", "city"]),
-        format_with(f_string, my_dict, ["color", "language"]),
-        format_with(f_string, my_dict, ["name", "food"]),
-    ]
+    strings = (
+        format_with(f_string, my_dict, ("city", "color")),
+        format_with(f_string, my_dict, ("language", "city")),
+        format_with(f_string, my_dict, ("color", "language")),
+        format_with(f_string, my_dict, ("name", "food")),
+    )
     for s in strings:
         match s.value:
             case Ok(v):
@@ -26,20 +27,19 @@ def main():
             case Er(e):
                 print("No such key:", e)
 
-    get_key: Callable[
-        [dict[str, str], str], ResultType[dict[str, str], KeyError]
-    ] = Result(dict, KeyError).binds(lambda d, k: {**d, k: my_dict[k]})
+    DictResult: Type[ResultType[dict[str, str], KeyError]] = Result(dict, KeyError)
 
-    collect: Callable[
-        [list[str]], ResultType[dict[str, str], KeyError]
-        ] = lambda keys: fold(get_key, Result(dict, KeyError)({}), keys) # type: ignore
+    @DictResult.binds
+    def add_k_v(d: dict[str, str], k: str) -> dict[str, str]:
+        return {**d, k: my_dict[k]}
 
-    collected = [
-            collect(["city", "color"]),
-            collect(["language", "city"]),
-            collect(["color", "language", "city", "food"]),
-            collect(["name", "food"]),
-            ]
+    empty = DictResult({})
+    collected = (
+        empty.fold(add_k_v, ("city", "color")),
+        empty.fold(add_k_v, ("language", "city")),
+        empty.fold(add_k_v, ("color", "language", "city", "food")),
+        empty.fold(add_k_v, ("name", "food")),
+    )
     for c in collected:
         match c.value:
             case Ok(v):
