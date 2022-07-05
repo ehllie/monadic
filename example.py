@@ -1,4 +1,8 @@
-from typing import Iterable, Type
+from functools import partial
+from typing import Iterable, Type, TypeVar
+
+T1 = TypeVar("T1")
+T2 = TypeVar("T2")
 
 from result import Er, Ok, Result, ResultType
 
@@ -29,16 +33,17 @@ def main():
 
     DictResult: Type[ResultType[dict[str, str], KeyError]] = Result(dict, KeyError)
 
-    @DictResult.binds
-    def add_k_v(d: dict[str, str], k: str) -> dict[str, str]:
-        return {**d, k: my_dict[k]}
+    def add_k_v(source: dict[T1, T2], d: dict[T1, T2], k: T1) -> dict[T1, T2]:
+        return {**d, k: source[k]}
+
+    add_from_my = DictResult.binds(partial(add_k_v, my_dict))
 
     empty = DictResult({})
     collected = (
-        empty.fold(add_k_v, ("city", "color")),
-        empty.fold(add_k_v, ("language", "city")),
-        empty.fold(add_k_v, ("color", "language", "city", "food")),
-        empty.fold(add_k_v, ("name", "food")),
+        empty.fold(add_from_my, ("city", "color")),
+        empty.fold(add_from_my, ("language", "city")),
+        empty.fold(add_from_my, ("color", "language", "city", "food")),
+        empty.fold(add_from_my, ("name", "food")),
     )
     for c in collected:
         match c.value:
