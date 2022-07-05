@@ -1,88 +1,113 @@
 from dataclasses import dataclass
 from functools import reduce, wraps
-from typing import Callable, Generic, Iterable, ParamSpec, Protocol, Type, TypeVar, cast
+from typing import (
+    Any,
+    Callable,
+    Generic,
+    Iterable,
+    ParamSpec,
+    Protocol,
+    Type,
+    TypeVar,
+    cast,
+)
 
 from interfaces import Foldable, Monad, Unwrappable
 
 P = ParamSpec("P")
-T = TypeVar("T")
 T1 = TypeVar("T1")
 T2 = TypeVar("T2")
-_E = TypeVar("_E", bound=Exception)
 E = TypeVar("E", bound=Exception)
-CO = TypeVar("CO", covariant=True)
 
 
-@dataclass
-class Ok(Generic[T]):
-    v: T
-
-
-@dataclass
-class Er(Generic[E]):
-    e: E
-
-
-class ResultType(Monad[T1], Unwrappable[T1], Foldable[T1], Protocol[T1, E]):
-    value: Ok[T1] | Er[E]
-
-    def __init__(self, value: T1 | E):
+class Result(Monad[T1], Unwrappable[T1], Foldable[T1], Protocol[T1, E]):
+    def apply(self, f: Callable[[T1], "Result[T2, E]"], /) -> "Result[T2, E]":  # type: ignore
         ...
 
-    def apply(self, f: Callable[[T1], "ResultType[T2, E]"]) -> "ResultType[T2, E]":  # type: ignore
+    def fold(self, f: Callable[[T1, T2], "Result[T1, E]"], i: Iterable[T2]) -> "Result[T1, E]":  # type: ignore
         ...
 
-    def fold(self, f: Callable[[T1, T2], "ResultType[T1, E]"], i: Iterable[T2]) -> "ResultType[T1, E]":  # type: ignore
+    def inst(self) -> "Ok[T1, E] | Err[E]":
         ...
 
     @classmethod
-    def binds(cls, f: Callable[P, T1]) -> Callable[P, "ResultType[T1, E]"]:
-        ...
+    def binds(cls, f: Callable[P, T1], /) -> Callable[P, "Result[T1, E]"]:
+        @wraps(f)
+        def inner(*args: P.args, **kwargs: P.kwargs) -> "Result[T1, E]":
+            try:
+                return Ok[T1, E](f(*args, **kwargs))
+            except Err as err:  # type: ignore
+                return cast(Err[E], err)
 
+        return inner
 
-def Result(ok: Type[T], er: Type[E]) -> Type[ResultType[T, E]]:
-    class _Result(ResultType[T1, _E]):
-        def __init__(self, value: T1 | _E):
-            if isinstance(value, ok):
-                self.value = Ok[T1](cast(T1, value))
-            else:
-                self.value = Er[_E](cast(_E, value))
-
-        def apply(self, f: Callable[[T1], ResultType[T2, _E]]) -> ResultType[T2, _E]:
-            match self.value:
-                case Ok(v):
-                    return f(v)
-                case Er(e):
-                    return _Result[T2, _E](e)
-
-        def fold(
-            self, f: Callable[[T1, T2], ResultType[T1, _E]], i: Iterable[T2]
-        ) -> ResultType[T1, _E]:
-            return reduce(lambda acc, x: acc.apply(lambda a: f(a, x)), i, self)
-
-        def __call__(self, d: T1 | None = None) -> T1:
-            match self.value:
-                case Ok(v):
-                    return v
-                case Er(e):
-                    if d is None:
-                        raise e
-                    return d
-
-        def ok(self) -> bool:
-            return isinstance(self.value, ok)
-
-        @classmethod
-        def binds(
-            cls: Type["_Result[T1, _E]"], f: Callable[P, T1]
-        ) -> Callable[P, "_Result[T1, _E]"]:
+    @classmethod
+    def capture(
+        cls, err_type: Type[E]
+    ) -> Callable[[Callable[P, T1]], Callable[P, "Result[T1, E]"]]:
+        def wrapper(f: Callable[P, T1], /):
+            @cls.binds
             @wraps(f)
-            def inner(*args: P.args, **kwargs: P.kwargs) -> "_Result[T1, _E]":
+            def inner(*args: P.args, **kwargs: P.kwargs) -> T1:
                 try:
-                    return _Result[T1, _E](f(*args, **kwargs))
-                except er as e:
-                    return _Result[T1, _E](e)
+                    return f(*args, **kwargs)
+                except err_type as err:
+                    raise Err[E](err)
 
             return inner
 
-    return _Result[ok, er]
+        return wrapper
+
+
+@dataclass
+class Ok(Result[T1, E], Generic[T1, E]):
+    v: T1
+
+    def __init__(self, v: T1):
+        self.v = v
+
+    def inst(self) -> "Ok[T1, E]":
+        return self
+
+    def apply(self, f: Callable[[T1], Result[T2, E]]) -> Result[T2, E]:
+        return f(self.v)
+
+    def fold(
+        self, f: Callable[[T1, T2], Result[T1, E]], i: Iterable[T2]
+    ) -> "Result[T1, E]":
+        return reduce(lambda acc, x: acc.apply(lambda a: f(a, x)), i, self)
+
+    def __call__(self, _: T1 | None = None) -> T1:
+        return self.v
+
+    def ok(self) -> bool:
+        return True
+
+
+@dataclass
+class Err(Result[Any, E], Generic[E], Exception):
+    e: E
+
+    def __init__(self, e: E):
+        self.e = e
+        self.e_type = type(e)
+
+    def inst(self) -> "Err[E]":
+        return self
+
+    def apply(self, _: Callable[..., Result[T2, E]]) -> Result[T2, E]:
+        return self
+
+    def fold(
+        self, f: Callable[[T1, T2], Result[T1, E]], i: Iterable[T2]
+    ) -> Result[T1, E]:
+        return self
+
+    def __call__(self, d: T1 | None = None) -> T1:
+        if d is None:
+            raise self
+        else:
+            return d
+
+    def ok(self) -> bool:
+        return False

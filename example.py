@@ -1,18 +1,25 @@
 from functools import partial
-from typing import Iterable, Type, TypeVar
+from typing import Iterable, TypeVar
 
 T1 = TypeVar("T1")
 T2 = TypeVar("T2")
 
-from result import Er, Ok, Result, ResultType
+from maybe import Just, Maybe, Nothing
+from result import Err, Ok, Result
 
-StrDict = Result(str, KeyError)
 
-
-@StrDict.binds
+@Result[str, KeyError].capture(KeyError)
 def format_with(format: str, d: dict[str, str], keys: Iterable[str]) -> str:
     vals = (d[k] for k in keys)
     return format.format(*vals)
+
+
+@Maybe[str].binds
+def sometimes(ask: str) -> str | None:
+    if ask == "do nothing":
+        return None
+    else:
+        return ask
 
 
 def main():
@@ -25,20 +32,20 @@ def main():
         format_with(f_string, my_dict, ("name", "food")),
     )
     for s in strings:
-        match s.value:
+        match s.inst():
             case Ok(v):
                 print(v)
-            case Er(e):
+            case Err(e):
                 print("No such key:", e)
-
-    DictResult: Type[ResultType[dict[str, str], KeyError]] = Result(dict, KeyError)
 
     def add_k_v(source: dict[T1, T2], d: dict[T1, T2], k: T1) -> dict[T1, T2]:
         return {**d, k: source[k]}
 
-    add_from_my = DictResult.binds(partial(add_k_v, my_dict))
+    add_from_my = Result[dict[str, str], KeyError].capture(KeyError)(
+        partial(add_k_v, my_dict)
+    )
 
-    empty = DictResult({})
+    empty = Ok[dict[str, str], KeyError]({})
     collected = (
         empty.fold(add_from_my, ("city", "color")),
         empty.fold(add_from_my, ("language", "city")),
@@ -46,11 +53,19 @@ def main():
         empty.fold(add_from_my, ("name", "food")),
     )
     for c in collected:
-        match c.value:
+        match c.inst():
             case Ok(v):
                 print(v)
-            case Er(e):
+            case Err(e):
                 print("No such key:", e)
+
+    asks = ("do nothing", "do something")
+    for ask in asks:
+        match sometimes(ask).inst():
+            case Just(v):
+                print(v)
+            case Nothing():
+                print("Nothing")
 
 
 if __name__ == "__main__":

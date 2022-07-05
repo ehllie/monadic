@@ -17,7 +17,7 @@ class Monad(Protocol[T]):
     # (S, Callable[[T], S]) -> S) is incomatible with the superclass
     # See https://github.com/python/mypy/issues/1317
     # Decided to be strict here and type ignore in child classes
-    def apply(self, f: Callable[[T], "Monad[CO]"]) -> "Monad[CO]":
+    def apply(self, f: Callable[[T], "Monad[CO]"], /) -> "Monad[CO]":
         ...
 
 
@@ -30,11 +30,11 @@ class Foldable(Protocol[T1]):
 
 class Unwrappable(Protocol[T]):
     @classmethod
-    def binds(cls: Type[U], f: Callable[P, T]) -> Callable[P, U]:
+    def binds(cls: Type[U], f: Callable[P, T], /) -> Callable[P, U]:
         """Converts a funtion of type (*args, **kwargs) -> T, into a (*args, **kwargs) -> Unwrappable[T]"""
         ...
 
-    def __call__(self, d: T | None = None) -> T:
+    def __call__(self, d: T | None = None, /) -> T:
         """Unwraps the value inside. Can throw an exception if no default value is provided"""
         ...
 
