@@ -1,4 +1,5 @@
-from typing import Any, Callable, ParamSpec, Protocol, Type, TypeVar
+from functools import wraps
+from typing import Any, Callable, Concatenate, ParamSpec, Protocol, Type, TypeVar
 
 P = ParamSpec("P")
 T = TypeVar("T")
@@ -33,9 +34,32 @@ class Unwrappable(Protocol[T]):
         ...
 
     def __call__(self, d: T | None = None, /) -> T:
+        ...
+
+    def unwrap(self, d: T | None = None, /) -> T:
         """Unwraps the value inside. Can throw an exception if no default value is provided"""
         ...
 
     def ok(self) -> bool:
         """Returns True if it's safe to unwrap"""
         ...
+
+
+def bind(f: Callable[Concatenate[Callable[[U], Any], P], U], /) -> Callable[P, U]:
+    class End(Exception):
+        def __init__(self, value: U):
+            self.value = value
+
+    def handle(wrapped: U) -> Any:
+        if wrapped.ok():
+            return wrapped.unwrap()
+        raise End(wrapped)
+
+    @wraps(f)
+    def inner(*args: P.args, **kwargs: P.kwargs) -> U:
+        try:
+            return f(handle, *args, **kwargs)
+        except End as e:
+            return e.value
+
+    return inner
