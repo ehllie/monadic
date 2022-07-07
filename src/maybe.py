@@ -40,7 +40,7 @@ class Just(Monad, Unwrappable[T1], Foldable, Generic[T1]):
     def ok(self) -> bool:
         return True
 
-    def unwrap(self, d: T1 | None = None, /) -> T1:
+    def unwrap(self, _: T1 | None = None, /) -> T1:
         return self.v
 
     def __eq__(self, o: object) -> bool:
