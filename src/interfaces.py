@@ -53,13 +53,13 @@ class Unwrappable(Protocol[T]):
         """Returns True if it's safe to unwrap"""
         ...
 
-Handler: TypeAlias = "Callable[[Unwrappable[Any]], Any]"
+
+Handler: TypeAlias = Callable[[Unwrappable[Any]], Any]
+
 
 class Binder(Generic[U1]):
     @classmethod
-    def bind(
-        cls, f: Callable[Concatenate[Handler, P], U2], /
-    ) -> Callable[P, U1 | U2]:
+    def bind(cls, f: Callable[Concatenate[Handler, P], U2], /) -> Callable[P, U1 | U2]:
         @wraps(f)
         def inner(*args: P.args, **kwargs: P.kwargs) -> U1 | U2:
             class End(Exception):

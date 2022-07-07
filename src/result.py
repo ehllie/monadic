@@ -1,65 +1,30 @@
 from dataclasses import dataclass
-from functools import wraps
-from typing import Any, Callable, Generic, ParamSpec, Protocol, Type, TypeVar, cast
+from typing import Any, Callable, Generic, ParamSpec, TypeAlias, TypeVar
 
-from .interfaces import Foldable, Monad, Unwrappable
+from .interfaces import Binder, Foldable, Monad, UnwrapError, Unwrappable
 
 P = ParamSpec("P")
+T = TypeVar("T")
 T1 = TypeVar("T1")
 T2 = TypeVar("T2")
-E = TypeVar("E", bound=Exception)
+E = TypeVar("E")
+
+Result: TypeAlias = "Ok[T, E] | Err[T, E]"
+RHandle: TypeAlias = "Callable[[Result[T, E]], T]"
 
 
-class Result(Monad[T1], Unwrappable[T1], Foldable[T1], Protocol[T1, E]):
-    def apply(self, f: Callable[[T1], "Result[T2, E]"], /) -> "Result[T2, E]":  # type: ignore
-        ...
-
-    def fold(self, f: Callable[[T1, T2], "Result[T1, E]"], l: list[T2]) -> "Result[T1, E]":  # type: ignore
-        ...
-
-    def inst(self) -> "Ok[T1, E] | Err[E]":
-        ...
-
-    @classmethod
-    def binds(cls, f: Callable[P, T1], /) -> Callable[P, "Result[T1, E]"]:
-        @wraps(f)
-        def inner(*args: P.args, **kwargs: P.kwargs) -> "Result[T1, E]":
-            try:
-                return Ok[T1, E](f(*args, **kwargs))
-            except Err as err:  # type: ignore
-                return cast(Err[E], err)
-
-        return inner
-
-    @classmethod
-    def capture(
-        cls, err_type: Type[E]
-    ) -> Callable[[Callable[P, T1]], Callable[P, "Result[T1, E]"]]:
-        def wrapper(f: Callable[P, T1], /):
-            @cls.binds
-            @wraps(f)
-            def inner(*args: P.args, **kwargs: P.kwargs) -> T1:
-                try:
-                    return f(*args, **kwargs)
-                except err_type as err:
-                    raise Err[E](err)
-
-            return inner
-
-        return wrapper
+class RBinder(Binder["Err[T, E]"], Generic[T, E]):
+    pass
 
 
 @dataclass
-class Ok(Result[T1, E], Generic[T1, E]):
+class Ok(Monad, Unwrappable[T1], Foldable, Generic[T1, E]):
     v: T1
 
     def __init__(self, v: T1):
         self.v = v
 
-    def inst(self) -> "Ok[T1, E]":
-        return self
-
-    def apply(self, f: Callable[[T1], Result[T2, E]]) -> Result[T2, E]:
+    def apply(self, f: Callable[[T1], "Result[T2, E]"]) -> "Result[T2, E]":
         return f(self.v)
 
     def fold(
@@ -71,35 +36,55 @@ class Ok(Result[T1, E], Generic[T1, E]):
             case xs:
                 return self.apply(lambda v: f(v, xs[0])).fold(f, xs[1:])
 
-    def __call__(self, _: T1 | None = None) -> T1:
+    def __call__(self, _: Any) -> T1:
         return self.v
 
     def ok(self) -> bool:
         return True
 
+    def unwrap(self, d: T1 | None = None, /) -> T1:
+        return self.v
+
+    def __eq__(self, o: object) -> bool:
+        match o:
+            case Ok(v):  # type: ignore
+                if isinstance(v, type(self.v)):
+                    return self.v == v
+                return False
+            case _:
+                return False
+
 
 @dataclass
-class Err(Result[Any, E], Generic[E], Exception):
+class Err(Monad, Unwrappable[T], Foldable, Generic[T, E]):
     e: E
 
     def __init__(self, e: E):
         self.e = e
-        self.e_type = type(e)
 
-    def inst(self) -> "Err[E]":
+    def apply(self, _: Callable[..., Any]) -> "Err[T, E]":
         return self
 
-    def apply(self, _: Callable[..., Result[T2, E]]) -> Result[T2, E]:
+    def fold(self, f: Callable[..., Any], l: list[Any]) -> "Err[T, E]":
         return self
 
-    def fold(self, f: Callable[[T1, T2], Result[T1, E]], l: list[T2]) -> Result[T1, E]:
-        return self
-
-    def __call__(self, d: T1 | None = None) -> T1:
-        if d is None:
-            raise self
-        else:
-            return d
+    def __call__(self, handler: RHandle[T, E]) -> T:
+        return handler(self)
 
     def ok(self) -> bool:
         return False
+
+    def unwrap(self, d: T | None = None, /) -> T:
+        if d is None:
+            raise UnwrapError()
+        else:
+            return d
+
+    def __eq__(self, o: object) -> bool:
+        match o:
+            case Err(e):  # type: ignore
+                if isinstance(e, type(self.e)):
+                    return self.e == e
+                return False
+            case _:
+                return False
