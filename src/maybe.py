@@ -1,8 +1,7 @@
 from dataclasses import dataclass
-from functools import wraps
-from typing import Any, Callable, Generic, ParamSpec, Protocol, TypeAlias, TypeVar
+from typing import Any, Callable, Generic, ParamSpec, TypeAlias, TypeVar
 
-from .interfaces import Foldable, Monad, Unwrappable
+from .interfaces import UW, Foldable, Monad, UnwrapError, Unwrappable
 
 P = ParamSpec("P")
 T = TypeVar("T")
@@ -10,54 +9,39 @@ T1 = TypeVar("T1")
 T2 = TypeVar("T2")
 CO = TypeVar("CO", covariant=True)
 
-MyBe: TypeAlias = "Just[T] | Nothing"
+Maybe: TypeAlias = "Just[T] | Nothing"
+MH: TypeAlias = "Callable[[Maybe[T]], T]"
 
 
-class Maybe(Monad[T1], Unwrappable[T1], Foldable[T1], Protocol[T1]):
-    def apply(self, f: Callable[[T1], "MyBe[CO]"], /) -> "MyBe[CO]":  # type: ignore
-        ...
-
-    def fold(self, f: Callable[[T1, T2], "MyBe[T1]"], l: list[T2]) -> "MyBe[T1]":  # type: ignore
-        ...
-
-    @classmethod
-    def binds(cls, f: Callable[P, T1 | None], /) -> Callable[P, "MyBe[T1]"]:
-        @wraps(f)
-        def inner(*args: P.args, **kwargs: P.kwargs) -> "MyBe[T1]":
-            try:
-                match f(*args, **kwargs):
-                    case None:
-                        return Nothing()
-                    case val:
-                        return Just(val)
-            except Nothing:
-                return Nothing()
-
-        return inner
+class MU(UW["Maybe[Any]", T], Generic[T]):
+    pass
 
 
 @dataclass
-class Just(Maybe[T1], Generic[T1]):
+class Just(Monad, Unwrappable[T1], Foldable, Generic[T1]):
     v: T1
 
     def __init__(self, v: T1):
         self.v = v
 
-    def apply(self, f: Callable[[T1], "MyBe[CO]"]) -> "MyBe[CO]":
+    def apply(self, f: Callable[[T1], "Maybe[CO]"]) -> "Maybe[CO]":
         return f(self.v)
 
-    def fold(self, f: Callable[[T1, T2], "MyBe[T1]"], l: list[T2]) -> "MyBe[T1]":
+    def fold(self, f: Callable[[T1, T2], "Maybe[T1]"], l: list[T2]) -> "Maybe[T1]":
         match l:
             case []:
                 return self
             case xs:
                 return self.apply(lambda v: f(v, xs[0])).fold(f, xs[1:])
 
-    def __call__(self, _: T1 | None = None) -> T1:
+    def __call__(self, _: Any) -> T1:
         return self.v
 
     def ok(self) -> bool:
         return True
+
+    def unwrap(self, d: T1 | None = None, /) -> T1:
+        return self.v
 
     def __eq__(self, o: object) -> bool:
         match o:
@@ -69,24 +53,27 @@ class Just(Maybe[T1], Generic[T1]):
                 return False
 
 
-class Nothing(Maybe[Any], Exception):
+class Nothing(Monad, Unwrappable[Any], Foldable):
     def __init__(self):
         pass
 
-    def apply(self, _: Callable[..., "MyBe[CO]"]) -> "MyBe[CO]":
+    def apply(self, _: Callable[..., Any]) -> "Nothing":
         return self
 
-    def fold(self, f: Callable[[T1, T2], "MyBe[T1]"], l: list[T2]) -> "MyBe[T1]":
+    def fold(self, f: Callable[..., Any], l: list[Any]) -> "Nothing":
         return self
 
-    def __call__(self, d: T1 | None = None) -> T1:
-        if d is None:
-            raise self
-        else:
-            return d
+    def __call__(self, handler: "MH[T]") -> T:
+        return handler(self)
 
     def ok(self) -> bool:
         return False
+
+    def unwrap(self, d: T | None = None, /) -> T:
+        if d is None:
+            raise UnwrapError()
+        else:
+            return d
 
     def __eq__(self, o: object) -> bool:
         if isinstance(o, Nothing):

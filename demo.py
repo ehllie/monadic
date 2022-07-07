@@ -1,24 +1,15 @@
-from typing import Callable, TypeAlias, TypeVar
-
-from src.interfaces import bind
-from src.maybe import Just, Nothing
-
-T = TypeVar("T")
-
-MyBe: TypeAlias = Just[T] | Nothing
-
-MBU: TypeAlias = Callable[["MyBe[T]"], T]
+from src.maybe import MH, MU, Just, Maybe, Nothing
 
 
-def foo_or_bar(fbar: str) -> "MyBe[str]":
+def foo_or_bar(fbar: str) -> "Maybe[str]":
     if fbar in ("foo", "bar"):
         return Just(fbar)
     return Nothing()
 
 
-@bind
-def binder(u: "MBU[str]", s: str) -> MyBe[str]:
-    f1 = u(foo_or_bar(s))
+@MU[str].bind
+def binder(h: "MH[str]", s: str) -> "Maybe[str]":
+    f1 = foo_or_bar(s)(h)
     return Just(f"{f1} and {s}")
 
 
@@ -30,7 +21,11 @@ def main():
         case Nothing():
             print("Aw shucks!")
 
-    print(binder("foo")("bar"))
+    match binder("neither"):
+        case Nothing():
+            print("Expected that")
+        case _:
+            print("That's surprising!")
 
 
 if __name__ == "__main__":
