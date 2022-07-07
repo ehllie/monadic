@@ -1,4 +1,7 @@
-from src.maybe import MH, MU, Just, Maybe, Nothing
+from src.interfaces import Handler
+from src.maybe import Just, Maybe, MBinder, Nothing, TypeVar
+
+T = TypeVar("T")
 
 
 def foo_or_bar(fbar: str) -> "Maybe[str]":
@@ -7,8 +10,8 @@ def foo_or_bar(fbar: str) -> "Maybe[str]":
     return Nothing()
 
 
-@MU[str].bind
-def binder(h: "MH[str]", s: str) -> "Maybe[str]":
+@MBinder[str].bind
+def binds(h: Handler, s: str) -> "Maybe[str]":
     f1 = foo_or_bar(s)(h)
     return Just(f"{f1} and {s}")
 
@@ -21,7 +24,7 @@ def main():
         case Nothing():
             print("Aw shucks!")
 
-    match binder("neither"):
+    match binds("neither"):
         case Nothing():
             print("Expected that")
         case _:

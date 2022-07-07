@@ -1,9 +1,23 @@
 from functools import wraps
-from typing import Any, Callable, Concatenate, Generic, ParamSpec, Protocol, TypeVar
+from typing import (
+    Any,
+    Callable,
+    Concatenate,
+    Generic,
+    ParamSpec,
+    Protocol,
+    TypeAlias,
+    TypeVar,
+    cast,
+)
 
 P = ParamSpec("P")
 T = TypeVar("T")
-U = TypeVar("U", bound="Unwrappable[Any]")
+T1 = TypeVar("T1")
+T2 = TypeVar("T2")
+U1 = TypeVar("U1", bound="Unwrappable[Any]")
+U2 = TypeVar("U2", bound="Unwrappable[Any]")
+U3 = TypeVar("U3", bound="Unwrappable[Any]")
 
 
 class Monad(Protocol):
@@ -28,7 +42,7 @@ class UnwrapError(Exception):
 
 
 class Unwrappable(Protocol[T]):
-    def __call__(self, handle: Callable[[U], T], /) -> T:
+    def __call__(self, handle: Callable[[U1], T], /) -> T:
         ...
 
     def unwrap(self, d: T | None = None, /) -> T:
@@ -39,23 +53,24 @@ class Unwrappable(Protocol[T]):
         """Returns True if it's safe to unwrap"""
         ...
 
+Handler: TypeAlias = "Callable[[Unwrappable[Any]], Any]"
 
-class UW(Generic[U, T]):
+class Binder(Generic[U1]):
     @classmethod
     def bind(
-        cls, f: Callable[Concatenate[Callable[[U], T], P], U], /
-    ) -> Callable[P, U]:
+        cls, f: Callable[Concatenate[Handler, P], U2], /
+    ) -> Callable[P, U1 | U2]:
         @wraps(f)
-        def inner(*args: P.args, **kwargs: P.kwargs) -> U:
+        def inner(*args: P.args, **kwargs: P.kwargs) -> U1 | U2:
             class End(Exception):
-                def __init__(self, value: U):
+                def __init__(self, value: U2):
                     self.value = value
 
-            def handle(uw: U) -> T:
+            def handle(uw: Unwrappable[Any]) -> Any:
                 if uw.ok():
                     return uw.unwrap()
                 else:
-                    raise End(uw)
+                    raise End(cast(U2, uw))
 
             try:
                 return f(handle, *args, **kwargs)

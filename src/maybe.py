@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Any, Callable, Generic, ParamSpec, TypeAlias, TypeVar
 
-from .interfaces import UW, Foldable, Monad, UnwrapError, Unwrappable
+from .interfaces import Binder, Foldable, Monad, UnwrapError, Unwrappable
 
 P = ParamSpec("P")
 T = TypeVar("T")
@@ -9,11 +9,11 @@ T1 = TypeVar("T1")
 T2 = TypeVar("T2")
 CO = TypeVar("CO", covariant=True)
 
-Maybe: TypeAlias = "Just[T] | Nothing"
-MH: TypeAlias = "Callable[[Maybe[T]], T]"
+Maybe: TypeAlias = "Just[T] | Nothing[T]"
+MHandle: TypeAlias = "Callable[[Maybe[T]], T]"
 
 
-class MU(UW["Maybe[Any]", T], Generic[T]):
+class MBinder(Binder["Nothing[T]"]):
     pass
 
 
@@ -53,17 +53,17 @@ class Just(Monad, Unwrappable[T1], Foldable, Generic[T1]):
                 return False
 
 
-class Nothing(Monad, Unwrappable[Any], Foldable):
+class Nothing(Monad, Unwrappable[T], Foldable, Generic[T]):
     def __init__(self):
         pass
 
-    def apply(self, _: Callable[..., Any]) -> "Nothing":
+    def apply(self, _: Callable[..., Any]) -> "Nothing[T]":
         return self
 
-    def fold(self, f: Callable[..., Any], l: list[Any]) -> "Nothing":
+    def fold(self, f: Callable[..., Any], l: list[Any]) -> "Nothing[T]":
         return self
 
-    def __call__(self, handler: "MH[T]") -> T:
+    def __call__(self, handler: "MHandle[T]") -> T:
         return handler(self)
 
     def ok(self) -> bool:
