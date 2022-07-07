@@ -43,22 +43,31 @@ def test_not_just2():
     assert sometimes("do something") != Nothing()
 
 
-def test_throws_nothing():
-    pytest.raises(UnwrapError, lambda: sometimes("do nothing").unwrap)
+def test_unwrap_nothing():
+    pytest.raises(UnwrapError, lambda: sometimes("do nothing").unwrap())
+
+
+def test_unwrap_nothing_default():
+    assert Nothing[int]().unwrap(4) == 4
+
+
+def test_unwrap_just():
+    assert Just("1").unwrap() == "1"
+
+
+def test_unwrap_just_default():
+    assert Just("1").unwrap("5") == "1"
 
 
 def test_binds_nothing():
-    @MBinder.bind
-    def binds(h: Handler) -> "Maybe[str]":
-        s1 = sometimes("do something")(h)
-        s2 = sometimes("do nothing")(h)
-        return Just(s1 + s2)
 
-    assert binds() == Nothing()
+    assert ask_three("thing 1", "do nothing", "thing 2") == Nothing()
 
 
 def test_binds_something():
-    assert ask_three
+    assert ask_three("thing 1", "thing 2", "thing 3") == Just(
+        ("thing 1", "thing 2", "thing 3")
+    )
 
 
 def test_fold_empty():

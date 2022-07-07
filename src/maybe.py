@@ -13,7 +13,7 @@ Maybe: TypeAlias = "Just[T] | Nothing[T]"
 MHandle: TypeAlias = "Callable[[Maybe[T]], T]"
 
 
-class MBinder(Binder["Nothing[T]"]):
+class MBinder(Binder["Nothing[T]"], Generic[T]):
     pass
 
 
