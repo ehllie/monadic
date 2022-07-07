@@ -21,6 +21,8 @@ U3 = TypeVar("U3", bound="Unwrappable[Any]")
 
 
 class Monad(ABC):
+
+    _v: Any
     # Can't define it as (M, Callable[[T], M]) -> M
     # Type checker claims that for the subclass of type S,
     # (S, Callable[[T], S]) -> S) is incomatible with the superclass
@@ -28,6 +30,12 @@ class Monad(ABC):
     @abstractmethod
     def apply(self, f: Callable[..., Any], /) -> "Monad":
         ...
+
+    def __eq__(self, o: object) -> bool:
+        if isinstance(o, type(self)):
+            if isinstance(o._v, type(self._v)):
+                return o._v == self._v
+        return False
 
 
 class Foldable(ABC):

@@ -19,13 +19,13 @@ class MBinder(Binder["Nothing[T]"], Generic[T]):
 
 @dataclass
 class Just(Monad, Unwrappable[T1], Foldable, Generic[T1]):
-    v: T1
+    _v: T1
 
     def __init__(self, v: T1):
-        self.v = v
+        self._v = v
 
     def apply(self, f: Callable[[T1], "Maybe[CO]"]) -> "Maybe[CO]":
-        return f(self.v)
+        return f(self._v)
 
     def fold(self, f: Callable[[T1, T2], "Maybe[T1]"], l: list[T2]) -> "Maybe[T1]":
         match l:
@@ -35,27 +35,18 @@ class Just(Monad, Unwrappable[T1], Foldable, Generic[T1]):
                 return self.apply(lambda v: f(v, xs[0])).fold(f, xs[1:])
 
     def __call__(self, _: Any) -> T1:
-        return self.v
+        return self._v
 
     def ok(self) -> bool:
         return True
 
     def unwrap(self, _: T1 | None = None, /) -> T1:
-        return self.v
-
-    def __eq__(self, o: object) -> bool:
-        match o:
-            case Just(v):  # type: ignore
-                if isinstance(v, type(self.v)):
-                    return self.v == v
-                return False
-            case _:
-                return False
+        return self._v
 
 
 class Nothing(Monad, Unwrappable[T], Foldable, Generic[T]):
     def __init__(self):
-        pass
+        self._v = None
 
     def apply(self, _: Callable[..., Any]) -> "Nothing[T]":
         return self
@@ -74,9 +65,3 @@ class Nothing(Monad, Unwrappable[T], Foldable, Generic[T]):
             raise UnwrapError()
         else:
             return d
-
-    def __eq__(self, o: object) -> bool:
-        if isinstance(o, Nothing):
-            return True
-        else:
-            return False
